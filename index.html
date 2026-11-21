@@ -1,6 +1,7 @@
 <!--
-  代碼產生日期與時間：2026-11-21 21:41
-  功能註記：班級 To-Do List 紅綠燈打卡系統安全前端 (GitHub Pages 專用，localStorage 僅儲存加密 Token，絕不存明文密碼)
+  代碼產生日期與時間：2026-11-21 22:39
+  功能註記：班級 To-Do List 紅綠燈打卡系統完整前端 (GitHub Pages 專用)
+  整合功能：HMAC加密Token自動登入、紅綠燈三階段打卡、導師依學生日期分組覆核(含誤觸防呆)、任務分派、強制讀取簡報日期區間(預設本週一～六)
 -->
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -137,6 +138,39 @@
       </div>
     </header>
 
+    <!-- 🔄 導師強制讀取簡報區間 (預設本週一～週六) -->
+    <details class="bg-white rounded-2xl shadow-sm border border-slate-200 mb-4 overflow-hidden">
+      <summary class="px-4 py-3 text-xs font-extrabold text-slate-700 cursor-pointer flex items-center justify-between bg-slate-50 hover:bg-slate-100 select-none">
+        <span>🔄 強制讀取簡報區間（預設本週一～週六）</span>
+        <span class="text-slate-400">點此展開 ▾</span>
+      </summary>
+      <div class="p-4 space-y-3 border-t border-slate-100">
+        <div class="flex flex-wrap gap-2">
+          <button type="button" onclick="setSyncPreset('thisWeek')" class="text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100">本週一～六</button>
+          <button type="button" onclick="setSyncPreset('lastWeek')" class="text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200">上週一～六</button>
+          <button type="button" onclick="setSyncPreset('today')" class="text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200">僅今天</button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-[11px] font-bold text-slate-400 mb-1">開始日期</label>
+            <input type="date" id="syncStartDate" class="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl font-bold text-xs text-slate-800 outline-none">
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-400 mb-1">結束日期</label>
+            <input type="date" id="syncEndDate" class="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl font-bold text-xs text-slate-800 outline-none">
+          </div>
+        </div>
+
+        <button type="button" id="syncRangeBtn" onclick="submitSyncSlideRange()"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs py-3 rounded-xl shadow transition active:scale-[0.98]">
+          ⚡ 立即強制讀取簡報
+        </button>
+        <p id="syncRangeResult" class="hidden text-[11px] font-bold text-center p-2 rounded-lg"></p>
+      </div>
+    </details>
+
+    <!-- 分頁切換列 -->
     <div class="bg-slate-900 p-1.5 rounded-2xl grid grid-cols-2 gap-1.5 mb-5">
       <button id="tabBtnVerify" onclick="switchTeacherTab('verify')" class="py-2.5 rounded-xl text-sm font-extrabold bg-amber-400 text-slate-900 transition">✅ 待覆核學生清單</button>
       <button id="tabBtnAssign" onclick="switchTeacherTab('assign')" class="py-2.5 rounded-xl text-sm font-extrabold text-white hover:bg-slate-800 transition">📢 分派新任務</button>
@@ -220,7 +254,7 @@
 
   <script>
     // ⚙️ === 可供調整之系統參數 ===
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxTDEzg5YMmufWVry6KtKwnoi26mcAhuspavXgu5uhfinm6fISEwgQdpqwD2PKfWjlLEQ/exec";
+    const GAS_API_URL = "請貼上您的 GAS 網頁應用程式網址 (以 /exec 結尾)";
     const TOKEN_STORAGE_KEY = "CLASS105_TODO_TOKEN_V2";
 
     let authToken = "";
@@ -259,6 +293,13 @@
       const y = dStr.slice(0, 4), m = dStr.slice(4, 6), d = dStr.slice(6, 8);
       const w = ['日', '一', '二', '三', '四', '五', '六'][new Date(`${y}-${m}-${d}`).getDay()];
       return `${y}/${m}/${d} (${w})`;
+    }
+
+    function toInputDateStr(dateObj) {
+      const y = dateObj.getFullYear();
+      const m = String(dateObj.getMonth() + 1).padStart(2, "0");
+      const d = String(dateObj.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
     }
 
     function formatCardLines(title) {
@@ -308,7 +349,6 @@
           return;
         }
 
-        // 清空密碼輸入框，不留痕跡
         document.getElementById("loginPwd").value = "";
         authToken = data.token;
 
@@ -661,13 +701,10 @@
       }
     }
 
-    // --- 📢 導師分派任務 ---
+    // --- 📢 導師分派任務 & 強制同步區間初始化 ---
     function initTeacherAssignUI() {
-      const today = new Date();
-      const yyyy = today.getFullYear();
-      const mm = String(today.getMonth() + 1).padStart(2, "0");
-      const dd = String(today.getDate()).padStart(2, "0");
-      document.getElementById("assignDate").value = `${yyyy}-${mm}-${dd}`;
+      setSyncPreset("thisWeek"); // 預設強制讀取簡報區間為本週一～週六
+      document.getElementById("assignDate").value = toInputDateStr(new Date());
 
       const picker = document.getElementById("assignSeatPicker");
       picker.innerHTML = teacherState.allStudents.map(s => `
@@ -738,6 +775,80 @@
       } finally {
         btn.disabled = false;
         btn.textContent = "🚀 立即分派至系統";
+      }
+    }
+
+    // --- 🔄 導師強制讀取簡報區間 ---
+    function setSyncPreset(mode) {
+      const now = new Date();
+      const day = now.getDay(); // 0=日, 1=一 ... 6=六
+      const diffToMon = (day === 0) ? -6 : (1 - day);
+
+      const start = new Date(now);
+      const end = new Date(now);
+
+      if (mode === "thisWeek") {
+        start.setDate(now.getDate() + diffToMon);
+        end.setDate(start.getDate() + 5); // 週一 + 5天 = 週六
+      } else if (mode === "lastWeek") {
+        start.setDate(now.getDate() + diffToMon - 7);
+        end.setDate(start.getDate() + 5);
+      }
+
+      const startEl = document.getElementById("syncStartDate");
+      const endEl = document.getElementById("syncEndDate");
+      if (startEl && endEl) {
+        startEl.value = toInputDateStr(start);
+        endEl.value = toInputDateStr(end);
+      }
+    }
+
+    async function submitSyncSlideRange() {
+      const startDate = document.getElementById("syncStartDate").value;
+      const endDate = document.getElementById("syncEndDate").value;
+      const resEl = document.getElementById("syncRangeResult");
+      const btn = document.getElementById("syncRangeBtn");
+
+      if (!startDate || !endDate) {
+        showToast("請選擇完整的開始與結束日期！");
+        return;
+      }
+      if (startDate > endDate) {
+        showToast("開始日期不能晚於結束日期喔！");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "🔄 正在讀取簡報並寫入資料庫...";
+      resEl.classList.add("hidden");
+
+      try {
+        const data = await callApi({
+          action: "syncSlideRange",
+          token: authToken,
+          startDate: startDate,
+          endDate: endDate
+        });
+
+        resEl.classList.remove("hidden");
+        if (data.success) {
+          resEl.className = "text-[11px] font-bold text-center p-2 rounded-lg bg-emerald-50 text-emerald-700";
+          resEl.textContent = `✅ ${data.message}`;
+          showToast(data.message);
+          if (data.syncedDates && data.syncedDates.length > 0) {
+            refreshTeacherPending();
+          }
+        } else {
+          resEl.className = "text-[11px] font-bold text-center p-2 rounded-lg bg-rose-50 text-rose-700";
+          resEl.textContent = `❌ ${data.message || "同步失敗"}`;
+        }
+      } catch (e) {
+        resEl.classList.remove("hidden");
+        resEl.className = "text-[11px] font-bold text-center p-2 rounded-lg bg-rose-50 text-rose-700";
+        resEl.textContent = "❌ 連線異常，請稍後再試";
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "⚡ 立即強制讀取簡報";
       }
     }
 
