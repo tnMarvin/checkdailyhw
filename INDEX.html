@@ -1,0 +1,779 @@
+<!--
+  代碼產生日期與時間：2026-11-21 21:41
+  功能註記：班級 To-Do List 紅綠燈打卡系統安全前端 (GitHub Pages 專用，localStorage 僅儲存加密 Token，絕不存明文密碼)
+-->
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>105班 作業與考試紅綠燈打卡系統</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .tl-card {
+      border: 1.5px solid #334155;
+      border-radius: 1rem;
+      transition: transform 0.12s ease, background-color 0.2s ease;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .tl-card:active { transform: scale(0.96); }
+    .status-0 { background-color: #FADBD8; color: #0f172a; } /* 未完成：粉紅底黑字 */
+    .status-1 { background-color: #FFF200; color: #0f172a; } /* 已完成：鮮黃底黑字 */
+    .status-2 { background-color: #A9D18E; color: #0f172a; } /* 已覆核：草綠底黑字 */
+    .spinner {
+      border: 3px solid #e2e8f0; border-top: 3px solid #2563eb;
+      border-radius: 50%; width: 26px; height: 26px; animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    #toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      z-index: 9999; transition: opacity 0.25s ease;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 pb-16 font-sans">
+
+  <div id="toast" class="hidden bg-slate-900 text-white text-xs font-bold px-5 py-3 rounded-full shadow-xl"></div>
+
+  <!-- ================= 🔐 畫面一：登入畫面 ================= -->
+  <main id="viewLogin" class="max-w-md mx-auto px-4 pt-12">
+    <div class="bg-white rounded-3xl shadow-md border border-slate-200 p-7">
+      <div class="text-center mb-6">
+        <div class="text-4xl mb-2">🚦</div>
+        <h1 class="text-2xl font-extrabold text-slate-900">班級紅綠燈打卡系統</h1>
+        <p class="text-xs text-slate-500 mt-1 font-medium">學生／家長請輸入座號與密碼；導師請輸入管理帳密</p>
+      </div>
+
+      <form onsubmit="handleLoginSubmit(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-500 mb-1.5">帳號（學生請填座號，如 1~29）</label>
+          <input type="text" id="loginAccount" required autocomplete="username" placeholder="例如：5"
+                 class="w-full p-3.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 outline-none focus:border-blue-500">
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-500 mb-1.5">登入密碼</label>
+          <input type="password" id="loginPwd" required autocomplete="current-password" placeholder="請輸入密碼"
+                 class="w-full p-3.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 outline-none focus:border-blue-500">
+        </div>
+
+        <label class="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer pt-1">
+          <input type="checkbox" id="rememberMe" checked class="w-4 h-4 rounded text-blue-600">
+          <span>保持登入狀態（使用安全加密憑證，不儲存明文密碼）</span>
+        </label>
+
+        <button type="submit" id="loginBtn"
+                class="w-full bg-slate-900 hover:bg-slate-800 text-white font-extrabold py-4 rounded-xl shadow transition active:scale-[0.98]">
+          登入系統
+        </button>
+      </form>
+      <p id="loginError" class="hidden mt-4 text-xs font-bold text-rose-600 bg-rose-50 p-3 rounded-xl text-center"></p>
+    </div>
+  </main>
+
+  <!-- ================= 🎒 畫面二：學生／家長打卡頁 ================= -->
+  <main id="viewStudent" class="hidden max-w-lg mx-auto px-4 pt-5">
+    <header class="flex items-center justify-between mb-4">
+      <div>
+        <h1 class="text-xl font-extrabold text-slate-900" id="stuTitle">🎒 學生打卡</h1>
+        <span id="stuSyncBadge" class="inline-block mt-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700">已同步</span>
+      </div>
+      <button onclick="logout()" class="text-xs font-bold text-slate-500 bg-white border border-slate-300 px-3 py-2 rounded-xl hover:bg-slate-50">登出</button>
+    </header>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-4 space-y-3">
+      <div>
+        <label class="block text-xs font-bold text-slate-400 mb-1">📅 檢視日期</label>
+        <select id="stuDateSelect" onchange="loadStudentDate()" class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 outline-none"></select>
+      </div>
+
+      <div class="flex items-center justify-around text-xs font-bold pt-1">
+        <span class="flex items-center gap-1.5"><i class="w-3.5 h-3.5 rounded border border-slate-700 status-0 inline-block"></i>未完成</span>
+        <span class="flex items-center gap-1.5"><i class="w-3.5 h-3.5 rounded border border-slate-700 status-1 inline-block"></i>已完成</span>
+        <span class="flex items-center gap-1.5"><i class="w-3.5 h-3.5 rounded border border-slate-700 status-2 inline-block"></i>已覆核</span>
+      </div>
+
+      <div>
+        <div class="flex justify-between text-xs font-bold mb-1">
+          <span class="text-slate-500">本日完成進度</span>
+          <span id="stuProgressText" class="text-blue-600">0 / 0 (0%)</span>
+        </div>
+        <div class="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+          <div id="stuProgressBar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="stuLoading" class="hidden py-10 flex justify-center"><div class="spinner"></div></div>
+
+    <div id="stuSections" class="space-y-4">
+      <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+        <h2 class="text-sm font-extrabold text-rose-600 mb-3 flex justify-between"><span>📝 考試項目</span><span id="cntExam" class="text-xs bg-rose-50 px-2 py-0.5 rounded-full">0</span></h2>
+        <div id="gridExam" class="grid grid-cols-2 gap-3"></div>
+      </section>
+
+      <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+        <h2 class="text-sm font-extrabold text-blue-600 mb-3 flex justify-between"><span>📚 作業項目</span><span id="cntHw" class="text-xs bg-blue-50 px-2 py-0.5 rounded-full">0</span></h2>
+        <div id="gridHw" class="grid grid-cols-2 gap-3"></div>
+      </section>
+
+      <section id="secExtra" class="hidden bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+        <h2 class="text-sm font-extrabold text-purple-600 mb-3 flex justify-between"><span>📌 導師加派</span><span id="cntExtra" class="text-xs bg-purple-50 px-2 py-0.5 rounded-full">0</span></h2>
+        <div id="gridExtra" class="grid grid-cols-2 gap-3"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ================= 👩‍🏫 畫面三：導師管理後台 ================= -->
+  <main id="viewTeacher" class="hidden max-w-2xl mx-auto px-4 pt-5">
+    <header class="flex items-center justify-between mb-4">
+      <div>
+        <h1 class="text-xl font-extrabold text-slate-900">👩‍🏫 導師管理後台</h1>
+        <span id="teaSyncBadge" class="inline-block mt-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700">已同步</span>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="refreshTeacherPending()" class="text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-3 py-2 rounded-xl hover:bg-blue-100">🔄 更新名單</button>
+        <button onclick="logout()" class="text-xs font-bold text-slate-500 bg-white border border-slate-300 px-3 py-2 rounded-xl hover:bg-slate-50">登出</button>
+      </div>
+    </header>
+
+    <div class="bg-slate-900 p-1.5 rounded-2xl grid grid-cols-2 gap-1.5 mb-5">
+      <button id="tabBtnVerify" onclick="switchTeacherTab('verify')" class="py-2.5 rounded-xl text-sm font-extrabold bg-amber-400 text-slate-900 transition">✅ 待覆核學生清單</button>
+      <button id="tabBtnAssign" onclick="switchTeacherTab('assign')" class="py-2.5 rounded-xl text-sm font-extrabold text-white hover:bg-slate-800 transition">📢 分派新任務</button>
+    </div>
+
+    <!-- 分頁 A：待覆核學生清單 -->
+    <section id="teacherTabVerify" class="space-y-4">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-extrabold text-slate-700">尚有未覆核項目的學生 (<span id="pendingStudentCount">0</span> 人)</h2>
+          <span class="text-[11px] font-bold text-slate-400">🟡已完成 🔴未完成</span>
+        </div>
+        <div id="studentChipsContainer" class="flex flex-wrap gap-2"></div>
+      </div>
+
+      <div id="selectedStudentPanel" class="hidden space-y-4">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 id="selectedStuHeader" class="text-lg font-extrabold text-slate-900"></h3>
+            <p class="text-[11px] font-bold text-slate-400">點擊紅／黃燈直接轉綠燈；誤觸再點可退回紅燈（切換學生後移出）</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button onclick="batchVerifyStudent('yellowOnly')" class="text-xs font-extrabold bg-yellow-300 hover:bg-yellow-400 text-slate-900 border border-slate-700 px-3 py-2 rounded-xl">✨ 一鍵覆核黃燈</button>
+            <button onclick="batchVerifyStudent('all')" class="text-xs font-extrabold bg-emerald-400 hover:bg-emerald-500 text-slate-900 border border-slate-700 px-3 py-2 rounded-xl">✅ 該生全部轉綠燈</button>
+          </div>
+        </div>
+
+        <div id="studentDateGroups" class="space-y-4"></div>
+      </div>
+
+      <div id="allClearBanner" class="hidden bg-emerald-50 border border-emerald-200 rounded-2xl p-10 text-center">
+        <div class="text-4xl mb-2">🎉</div>
+        <h3 class="text-lg font-extrabold text-emerald-800">全班目前皆已覆核完成！</h3>
+        <p class="text-xs text-emerald-600 mt-1">太棒了，沒有任何待處理的紅燈或黃燈項目。</p>
+      </div>
+    </section>
+
+    <!-- 分頁 B：分派新任務 -->
+    <section id="teacherTabAssign" class="hidden bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+      <h2 class="text-base font-extrabold text-slate-800 border-b border-slate-100 pb-2">📢 新增班級／個人 To-Do 任務</h2>
+
+      <div>
+        <label class="block text-xs font-bold text-slate-500 mb-1.5">1. 指定任務日期</label>
+        <input type="date" id="assignDate" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 outline-none">
+      </div>
+
+      <div>
+        <label class="block text-xs font-bold text-slate-500 mb-1.5">2. 選擇分派對象</label>
+        <div class="flex gap-4 mb-2 text-sm font-bold">
+          <label class="flex items-center gap-1.5 cursor-pointer">
+            <input type="radio" name="assignTargetMode" value="ALL" checked onchange="toggleTargetPicker()"> 全班學生
+          </label>
+          <label class="flex items-center gap-1.5 cursor-pointer">
+            <input type="radio" name="assignTargetMode" value="CUSTOM" onchange="toggleTargetPicker()"> 指定特定座號
+          </label>
+        </div>
+        <div id="assignSeatPicker" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 flex flex-wrap gap-2"></div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-bold text-slate-500 mb-1.5">3. 選擇任務類別</label>
+        <div class="grid grid-cols-3 gap-2">
+          <button type="button" onclick="selectAssignType('考試')" id="typeBtn考試" class="assign-type-btn py-2.5 rounded-xl text-xs font-extrabold border border-slate-300 bg-white text-slate-700">📝 考試</button>
+          <button type="button" onclick="selectAssignType('作業')" id="typeBtn作業" class="assign-type-btn py-2.5 rounded-xl text-xs font-extrabold border border-slate-300 bg-white text-slate-700">📚 作業</button>
+          <button type="button" onclick="selectAssignType('導師加派')" id="typeBtn導師加派" class="assign-type-btn py-2.5 rounded-xl text-xs font-extrabold border border-slate-700 bg-amber-300 text-slate-900">📌 導師加派</button>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-bold text-slate-500 mb-1.5">4. 輸入項目內容（多筆可用頓號「、」或換行分隔）</label>
+        <textarea id="assignRawText" rows="3" placeholder="例如：&#10;國:補寫習作L4、數:訂正小考卷&#10;繳交回條"
+                  class="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl font-bold text-sm text-slate-800 outline-none focus:border-blue-500"></textarea>
+      </div>
+
+      <button onclick="submitAssignTasks()" id="assignSubmitBtn"
+              class="w-full bg-amber-400 hover:bg-amber-500 border border-slate-800 text-slate-900 font-extrabold py-3.5 rounded-xl shadow transition active:scale-[0.98]">
+        🚀 立即分派至系統
+      </button>
+    </section>
+  </main>
+
+  <script>
+    // ⚙️ === 可供調整之系統參數 ===
+    const GAS_API_URL = "請貼上您的 GAS 網頁應用程式網址 (以 /exec 結尾)";
+    const TOKEN_STORAGE_KEY = "CLASS105_TODO_TOKEN_V2";
+
+    let authToken = "";
+    let studentState = { info: null, dates: [], currentDate: "", tasks: [] };
+    let teacherState = { pendingStudents: [], allStudents: [], selectedSeat: null, assignType: "導師加派", selectedAssignSeats: new Set() };
+
+    // --- 統一 POST API 呼叫器 (絕不使用 GET 傳送敏感資訊) ---
+    async function callApi(payload) {
+      const res = await fetch(GAS_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data && data.authExpired) {
+        logout();
+        showLoginError("登入憑證已過期，請重新輸入密碼登入。");
+      }
+      return data;
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.classList.remove("hidden");
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => el.classList.add("hidden"), 2500);
+    }
+
+    function escapeHtml(str) {
+      return String(str || "").replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+    }
+
+    function formatDateTW(dStr) {
+      if (!dStr || dStr.length !== 8) return dStr;
+      const y = dStr.slice(0, 4), m = dStr.slice(4, 6), d = dStr.slice(6, 8);
+      const w = ['日', '一', '二', '三', '四', '五', '六'][new Date(`${y}-${m}-${d}`).getDay()];
+      return `${y}/${m}/${d} (${w})`;
+    }
+
+    function formatCardLines(title) {
+      const idx = title.search(/[:：]/);
+      if (idx > 0 && idx < 6) {
+        const sub = escapeHtml(title.slice(0, idx).trim());
+        const content = escapeHtml(title.slice(idx + 1).trim());
+        return `<div class="text-base font-extrabold leading-tight">${sub}<span class="text-slate-500 text-xs ml-0.5">↓</span></div>
+                <div class="text-sm font-bold leading-snug mt-1 break-words">${content}<span class="text-slate-500 text-xs ml-0.5">↵</span></div>`;
+      }
+      return `<div class="text-sm font-extrabold leading-snug break-words">${escapeHtml(title)}<span class="text-slate-500 text-xs ml-0.5">↵</span></div>`;
+    }
+
+    function switchView(viewId) {
+      ["viewLogin", "viewStudent", "viewTeacher"].forEach(id => {
+        document.getElementById(id).classList.toggle("hidden", id !== viewId);
+      });
+    }
+
+    function showLoginError(msg) {
+      const el = document.getElementById("loginError");
+      el.textContent = msg;
+      el.classList.remove("hidden");
+    }
+
+    // --- 🔐 登入與加密憑證 (Token) 處理 ---
+    async function handleLoginSubmit(e) {
+      e.preventDefault();
+      if (GAS_API_URL.startsWith("請貼上")) {
+        showLoginError("請先在 index.html 中設定正確的 GAS_API_URL！");
+        return;
+      }
+
+      const account = document.getElementById("loginAccount").value.trim();
+      const pwd = document.getElementById("loginPwd").value.trim();
+      const remember = document.getElementById("rememberMe").checked;
+
+      const btn = document.getElementById("loginBtn");
+      btn.disabled = true;
+      btn.textContent = "安全驗證中...";
+      document.getElementById("loginError").classList.add("hidden");
+
+      try {
+        const data = await callApi({ action: "login", account, pwd });
+        if (!data.success) {
+          showLoginError(data.message || "登入失敗");
+          return;
+        }
+
+        // 清空密碼輸入框，不留痕跡
+        document.getElementById("loginPwd").value = "";
+        authToken = data.token;
+
+        if (remember) {
+          localStorage.setItem(TOKEN_STORAGE_KEY, authToken);
+        } else {
+          localStorage.removeItem(TOKEN_STORAGE_KEY);
+        }
+
+        enterAppByResponse(data);
+      } catch (err) {
+        showLoginError("連線失敗，請確認網路或 GAS 部署權限。");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "登入系統";
+      }
+    }
+
+    function enterAppByResponse(data) {
+      if (data.role === "student") {
+        studentState.info = data.student;
+        studentState.dates = data.dates || [];
+        studentState.currentDate = data.currentDate || "";
+        studentState.tasks = data.tasks || [];
+        renderStudentView();
+        switchView("viewStudent");
+      } else if (data.role === "teacher") {
+        teacherState.pendingStudents = data.pendingStudents || [];
+        teacherState.allStudents = data.allStudents || [];
+        initTeacherAssignUI();
+        renderTeacherPendingView();
+        switchView("viewTeacher");
+      }
+    }
+
+    function logout() {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      authToken = "";
+      document.getElementById("loginPwd").value = "";
+      switchView("viewLogin");
+    }
+
+    // --- 🎒 學生／家長打卡邏輯 ---
+    function renderStudentView() {
+      const s = studentState.info;
+      document.getElementById("stuTitle").textContent = `🎒 ${s.seat}號 ${s.name}`;
+      const sel = document.getElementById("stuDateSelect");
+      if (studentState.dates.length > 0) {
+        sel.innerHTML = studentState.dates.map(d =>
+          `<option value="${d}" ${d === studentState.currentDate ? "selected" : ""}>${formatDateTW(d)}</option>`
+        ).join("");
+      } else {
+        sel.innerHTML = `<option value="">尚無聯絡簿資料</option>`;
+      }
+      renderStudentCards();
+    }
+
+    async function loadStudentDate() {
+      const dateVal = document.getElementById("stuDateSelect").value;
+      if (!dateVal) return;
+      document.getElementById("stuLoading").classList.remove("hidden");
+      document.getElementById("stuSections").classList.add("opacity-40");
+
+      try {
+        const data = await callApi({ action: "getStudentData", token: authToken, date: dateVal });
+        if (data.success) {
+          studentState.currentDate = data.currentDate;
+          studentState.tasks = data.tasks || [];
+          renderStudentCards();
+        }
+      } catch (e) {
+        showToast("讀取日期資料失敗");
+      } finally {
+        document.getElementById("stuLoading").classList.add("hidden");
+        document.getElementById("stuSections").classList.remove("opacity-40");
+      }
+    }
+
+    function renderStudentCards() {
+      const exams = studentState.tasks.filter(t => t.type === "考試");
+      const hws = studentState.tasks.filter(t => t.type === "作業");
+      const extras = studentState.tasks.filter(t => t.type !== "考試" && t.type !== "作業");
+
+      document.getElementById("cntExam").textContent = `${exams.length} 項`;
+      document.getElementById("cntHw").textContent = `${hws.length} 項`;
+      document.getElementById("cntExtra").textContent = `${extras.length} 項`;
+      document.getElementById("secExtra").classList.toggle("hidden", extras.length === 0);
+
+      renderStudentGrid("gridExam", exams);
+      renderStudentGrid("gridHw", hws);
+      renderStudentGrid("gridExtra", extras);
+
+      const total = studentState.tasks.length;
+      const done = studentState.tasks.filter(t => t.status >= 1).length;
+      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      document.getElementById("stuProgressText").textContent = `${done} / ${total} (${pct}%)`;
+      document.getElementById("stuProgressBar").style.width = `${pct}%`;
+    }
+
+    function renderStudentGrid(containerId, list) {
+      const el = document.getElementById(containerId);
+      if (list.length === 0) {
+        el.innerHTML = `<p class="col-span-2 text-xs text-slate-400 text-center py-3">本日無項目</p>`;
+        return;
+      }
+      el.innerHTML = list.map(t => {
+        const idx = studentState.tasks.indexOf(t);
+        const label = t.status === 2 ? "✅ 已覆核" : (t.status === 1 ? "已完成" : "未完成");
+        return `
+          <button onclick="onStudentCardClick(${idx})" class="tl-card status-${t.status} p-3.5 text-center flex flex-col items-center justify-center min-h-[96px] relative">
+            ${formatCardLines(t.title)}
+            <span class="mt-2 text-[10px] font-extrabold opacity-75">${label}</span>
+          </button>
+        `;
+      }).join("");
+    }
+
+    async function onStudentCardClick(idx) {
+      const task = studentState.tasks[idx];
+      if (!task) return;
+      if (task.status === 2) {
+        showToast("🔒 導師已覆核完成，無法修改喔！");
+        return;
+      }
+
+      const prev = task.status;
+      task.status = prev === 0 ? 1 : 0;
+      renderStudentCards();
+      setBadge("stuSyncBadge", "☁️ 儲存中...", "blue");
+
+      try {
+        const data = await callApi({
+          action: "studentCheck",
+          token: authToken,
+          date: task.date,
+          type: task.type,
+          title: task.title,
+          status: task.status
+        });
+        if (!data.success) {
+          task.status = data.locked ? 2 : prev;
+          renderStudentCards();
+          showToast(data.message || "儲存失敗");
+          setBadge("stuSyncBadge", "已還原", "red");
+          return;
+        }
+        setBadge("stuSyncBadge", "✅ 已同步", "green");
+      } catch (e) {
+        task.status = prev;
+        renderStudentCards();
+        setBadge("stuSyncBadge", "❌ 儲存失敗", "red");
+        showToast("網路異常，請重試");
+      }
+    }
+
+    // --- 👩‍🏫 導師管理後台邏輯 ---
+    function switchTeacherTab(tab) {
+      const isVerify = tab === "verify";
+      document.getElementById("teacherTabVerify").classList.toggle("hidden", !isVerify);
+      document.getElementById("teacherTabAssign").classList.toggle("hidden", isVerify);
+      document.getElementById("tabBtnVerify").className = isVerify
+        ? "py-2.5 rounded-xl text-sm font-extrabold bg-amber-400 text-slate-900 transition"
+        : "py-2.5 rounded-xl text-sm font-extrabold text-white hover:bg-slate-800 transition";
+      document.getElementById("tabBtnAssign").className = !isVerify
+        ? "py-2.5 rounded-xl text-sm font-extrabold bg-amber-400 text-slate-900 transition"
+        : "py-2.5 rounded-xl text-sm font-extrabold text-white hover:bg-slate-800 transition";
+    }
+
+    async function refreshTeacherPending() {
+      setBadge("teaSyncBadge", "🔄 載入名單中...", "blue");
+      try {
+        const data = await callApi({ action: "getTeacherPending", token: authToken });
+        if (data.success) {
+          teacherState.pendingStudents = data.pendingStudents || [];
+          teacherState.allStudents = data.allStudents || [];
+          teacherState.selectedSeat = null;
+          renderTeacherPendingView();
+          setBadge("teaSyncBadge", "✅ 名單已更新", "green");
+          showToast("已重新整理最新待覆核名單");
+        }
+      } catch (e) {
+        setBadge("teaSyncBadge", "❌ 更新失敗", "red");
+      }
+    }
+
+    function renderTeacherPendingView() {
+      const list = teacherState.pendingStudents;
+      document.getElementById("pendingStudentCount").textContent = list.length;
+
+      const clearBanner = document.getElementById("allClearBanner");
+      const stuPanel = document.getElementById("selectedStudentPanel");
+      const chipsEl = document.getElementById("studentChipsContainer");
+
+      if (list.length === 0) {
+        chipsEl.innerHTML = `<p class="text-xs text-slate-400">目前無待覆核學生</p>`;
+        clearBanner.classList.remove("hidden");
+        stuPanel.classList.add("hidden");
+        return;
+      }
+
+      clearBanner.classList.add("hidden");
+      if (!teacherState.selectedSeat || !list.some(s => s.seat === teacherState.selectedSeat)) {
+        teacherState.selectedSeat = list[0].seat;
+      }
+
+      chipsEl.innerHTML = list.map(s => {
+        const active = s.seat === teacherState.selectedSeat;
+        const cls = active
+          ? "bg-slate-900 text-white border-slate-900 shadow"
+          : "bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100";
+        return `
+          <button onclick="selectTeacherStudent('${s.seat}')" class="px-3 py-2 rounded-xl border text-xs font-extrabold transition ${cls}">
+            ${s.seat}號 ${escapeHtml(s.name)}
+            <span class="ml-1 opacity-90">${s.yellowCount > 0 ? `🟡${s.yellowCount}` : ""} ${s.redCount > 0 ? `🔴${s.redCount}` : ""}</span>
+          </button>
+        `;
+      }).join("");
+
+      renderSelectedStudentDates();
+    }
+
+    function selectTeacherStudent(nextSeat) {
+      if (teacherState.selectedSeat && teacherState.selectedSeat !== nextSeat) {
+        pruneClearedItems(teacherState.selectedSeat);
+      }
+      teacherState.selectedSeat = nextSeat;
+      renderTeacherPendingView();
+    }
+
+    function pruneClearedItems(seat) {
+      const stuIdx = teacherState.pendingStudents.findIndex(s => s.seat === seat);
+      if (stuIdx === -1) return;
+      const stu = teacherState.pendingStudents[stuIdx];
+      let y = 0, r = 0;
+      stu.dateGroups = stu.dateGroups.map(g => ({
+        date: g.date,
+        items: g.items.filter(it => {
+          if (it.status < 2) {
+            if (it.status === 1) y++; else r++;
+            return true;
+          }
+          return false;
+        })
+      })).filter(g => g.items.length > 0);
+
+      stu.yellowCount = y;
+      stu.redCount = r;
+      if (stu.dateGroups.length === 0) {
+        teacherState.pendingStudents.splice(stuIdx, 1);
+      }
+    }
+
+    function renderSelectedStudentDates() {
+      const stu = teacherState.pendingStudents.find(s => s.seat === teacherState.selectedSeat);
+      const panel = document.getElementById("selectedStudentPanel");
+      if (!stu) { panel.classList.add("hidden"); return; }
+
+      panel.classList.remove("hidden");
+      document.getElementById("selectedStuHeader").textContent = `${stu.seat}號 ${stu.name} 的未覆核項目`;
+
+      const container = document.getElementById("studentDateGroups");
+      container.innerHTML = stu.dateGroups.map((group, gIdx) => `
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+          <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
+            <span class="text-sm font-extrabold text-slate-800">📅 ${formatDateTW(group.date)}</span>
+            <button onclick="batchVerifyDateGroup(${gIdx})" class="text-[11px] font-extrabold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 px-2.5 py-1 rounded-lg">本日全轉綠燈</button>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            ${group.items.map((item, iIdx) => {
+              const stLabel = item.status === 2 ? "✅ 已覆核" : (item.status === 1 ? "已完成" : "未完成");
+              return `
+                <button onclick="onTeacherCardClick(${gIdx}, ${iIdx})" class="tl-card status-${item.status} p-3.5 text-center flex flex-col items-center justify-center min-h-[100px] relative">
+                  <span class="absolute top-1.5 left-2 text-[10px] font-extrabold opacity-60">${escapeHtml(item.type)}</span>
+                  <div class="mt-2">${formatCardLines(item.title)}</div>
+                  <span class="mt-2 text-[10px] font-extrabold opacity-75">${stLabel}</span>
+                </button>
+              `;
+            }).join("")}
+          </div>
+        </div>
+      `).join("");
+    }
+
+    async function onTeacherCardClick(gIdx, iIdx) {
+      const stu = teacherState.pendingStudents.find(s => s.seat === teacherState.selectedSeat);
+      if (!stu) return;
+      const item = stu.dateGroups[gIdx].items[iIdx];
+      const prev = item.status;
+      item.status = prev === 2 ? 0 : 2;
+      renderSelectedStudentDates();
+
+      await sendTeacherBatch([{ date: item.date, seat: stu.seat, type: item.type, title: item.title, status: item.status }], () => {
+        item.status = prev;
+        renderSelectedStudentDates();
+      });
+    }
+
+    async function batchVerifyDateGroup(gIdx) {
+      const stu = teacherState.pendingStudents.find(s => s.seat === teacherState.selectedSeat);
+      if (!stu) return;
+      const group = stu.dateGroups[gIdx];
+      const targets = group.items.filter(it => it.status < 2);
+      if (targets.length === 0) return;
+
+      const backup = targets.map(it => ({ it, prev: it.status }));
+      targets.forEach(it => it.status = 2);
+      renderSelectedStudentDates();
+
+      await sendTeacherBatch(
+        targets.map(it => ({ date: it.date, seat: stu.seat, type: it.type, title: it.title, status: 2 })),
+        () => { backup.forEach(b => b.it.status = b.prev); renderSelectedStudentDates(); }
+      );
+    }
+
+    async function batchVerifyStudent(mode) {
+      const stu = teacherState.pendingStudents.find(s => s.seat === teacherState.selectedSeat);
+      if (!stu) return;
+      const targets = [];
+      stu.dateGroups.forEach(g => {
+        g.items.forEach(it => {
+          if (mode === "yellowOnly" && it.status === 1) targets.push(it);
+          else if (mode === "all" && it.status < 2) targets.push(it);
+        });
+      });
+      if (targets.length === 0) {
+        showToast(mode === "yellowOnly" ? "目前沒有黃燈(已完成)項目" : "皆已轉為綠燈");
+        return;
+      }
+
+      const backup = targets.map(it => ({ it, prev: it.status }));
+      targets.forEach(it => it.status = 2);
+      renderSelectedStudentDates();
+
+      await sendTeacherBatch(
+        targets.map(it => ({ date: it.date, seat: stu.seat, type: it.type, title: it.title, status: 2 })),
+        () => { backup.forEach(b => b.it.status = b.prev); renderSelectedStudentDates(); }
+      );
+    }
+
+    async function sendTeacherBatch(items, onErrorRollback) {
+      setBadge("teaSyncBadge", "☁️ 寫入覆核中...", "blue");
+      try {
+        const data = await callApi({ action: "teacherBatchVerify", token: authToken, items: items });
+        if (!data.success) throw new Error(data.message);
+        setBadge("teaSyncBadge", "✅ 覆核已儲存", "green");
+      } catch (e) {
+        if (onErrorRollback) onErrorRollback();
+        setBadge("teaSyncBadge", "❌ 儲存失敗", "red");
+        showToast("寫入失敗，已還原狀態");
+      }
+    }
+
+    // --- 📢 導師分派任務 ---
+    function initTeacherAssignUI() {
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, "0");
+      const dd = String(today.getDate()).padStart(2, "0");
+      document.getElementById("assignDate").value = `${yyyy}-${mm}-${dd}`;
+
+      const picker = document.getElementById("assignSeatPicker");
+      picker.innerHTML = teacherState.allStudents.map(s => `
+        <button type="button" id="assignChip_${s.seat}" onclick="toggleAssignSeat('${s.seat}')"
+                class="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700">
+          ${s.seat} ${escapeHtml(s.name)}
+        </button>
+      `).join("");
+    }
+
+    function toggleTargetPicker() {
+      const mode = document.querySelector('input[name="assignTargetMode"]:checked').value;
+      document.getElementById("assignSeatPicker").classList.toggle("hidden", mode === "ALL");
+    }
+
+    function toggleAssignSeat(seat) {
+      const btn = document.getElementById(`assignChip_${seat}`);
+      if (teacherState.selectedAssignSeats.has(seat)) {
+        teacherState.selectedAssignSeats.delete(seat);
+        btn.className = "px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700";
+      } else {
+        teacherState.selectedAssignSeats.add(seat);
+        btn.className = "px-2.5 py-1.5 rounded-lg border border-slate-900 bg-slate-900 text-xs font-bold text-white";
+      }
+    }
+
+    function selectAssignType(type) {
+      teacherState.assignType = type;
+      ["考試", "作業", "導師加派"].forEach(t => {
+        const el = document.getElementById(`typeBtn${t}`);
+        el.className = (t === type)
+          ? "assign-type-btn py-2.5 rounded-xl text-xs font-extrabold border border-slate-700 bg-amber-300 text-slate-900"
+          : "assign-type-btn py-2.5 rounded-xl text-xs font-extrabold border border-slate-300 bg-white text-slate-700";
+      });
+    }
+
+    async function submitAssignTasks() {
+      const dateVal = document.getElementById("assignDate").value;
+      const mode = document.querySelector('input[name="assignTargetMode"]:checked').value;
+      const rawText = document.getElementById("assignRawText").value.trim();
+      const targets = mode === "ALL" ? ["ALL"] : Array.from(teacherState.selectedAssignSeats);
+
+      if (!dateVal || !rawText || targets.length === 0) {
+        showToast("請確認日期、對象與內容皆已填寫！");
+        return;
+      }
+
+      const btn = document.getElementById("assignSubmitBtn");
+      btn.disabled = true;
+      btn.textContent = "派發中...";
+
+      try {
+        const data = await callApi({
+          action: "assignTasks",
+          token: authToken,
+          date: dateVal,
+          targets: targets,
+          type: teacherState.assignType,
+          rawText: rawText
+        });
+        if (!data.success) throw new Error(data.message);
+
+        document.getElementById("assignRawText").value = "";
+        showToast(`✅ 分派成功！共新增 ${data.addedCount} 筆任務`);
+        refreshTeacherPending();
+      } catch (e) {
+        showToast("❌ 分派失敗，請重試");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "🚀 立即分派至系統";
+      }
+    }
+
+    function setBadge(id, text, color) {
+      const el = document.getElementById(id);
+      const map = {
+        blue: "bg-blue-100 text-blue-700",
+        green: "bg-emerald-100 text-emerald-700",
+        red: "bg-rose-100 text-rose-700"
+      };
+      el.textContent = text;
+      el.className = `inline-block mt-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${map[color] || map.green}`;
+    }
+
+    // --- 🚀 啟動自動以安全 Token 登入 (不讀取任何密碼) ---
+    window.onload = async function () {
+      const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+      if (!savedToken || GAS_API_URL.startsWith("請貼上")) return;
+
+      const btn = document.getElementById("loginBtn");
+      btn.disabled = true;
+      btn.textContent = "自動安全登入中...";
+      try {
+        const data = await callApi({ action: "verifySession", token: savedToken });
+        if (data.success) {
+          authToken = savedToken;
+          enterAppByResponse(data);
+        } else {
+          localStorage.removeItem(TOKEN_STORAGE_KEY);
+        }
+      } catch (e) {
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "登入系統";
+      }
+    };
+  </script>
+</body>
+</html>
