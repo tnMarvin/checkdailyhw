@@ -31,6 +31,56 @@
       position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
       z-index: 9999; transition: opacity 0.25s ease;
     }
+
+    /* 📱 ================= 手機端自動偵測最佳化 (螢幕寬度 <= 640px) ================= */
+    @media (max-width: 640px) {
+      /* 1. 調整手機端根字體與容器邊距 */
+      body {
+        font-size: 16px; /* 防止 iOS Safari 點擊輸入框時畫面縮放跳動 */
+      }
+      main {
+        padding-left: 0.75rem !important;
+        padding-right: 0.75rem !important;
+      }
+
+      /* 2. 紅綠燈卡片放大：增加高度、內距與邊框視覺效果 */
+      .tl-card {
+        min-height: 116px !important;
+        padding: 0.85rem 0.5rem !important;
+        border-width: 2px !important;
+      }
+      .tl-card .text-base {
+        font-size: 1.15rem !important; /* 科目字級放大 */
+      }
+      .tl-card .text-sm {
+        font-size: 0.95rem !important; /* 內容字級放大 */
+        line-height: 1.35 !important;
+      }
+      .tl-card .text-\[10px\] {
+        font-size: 0.8rem !important; /* 狀態標籤放大 */
+      }
+
+      /* 3. 日期選單、輸入框與主要按鈕觸控區域放大 */
+      select, input[type="text"], input[type="password"], input[type="date"], textarea {
+        font-size: 1rem !important;
+        padding-top: 0.85rem !important;
+        padding-bottom: 0.85rem !important;
+      }
+      button {
+        min-height: 44px; /* 符合 Apple/Google 規範的最小舒適觸控高度 */
+      }
+
+      /* 4. 導師後台學生晶片標籤（Chips）排版加大 */
+      #studentChipsContainer button {
+        font-size: 0.85rem !important;
+        padding: 0.6rem 0.8rem !important;
+      }
+
+      /* 5. 進度條增粗，視覺更明顯 */
+      #stuProgressBar, #progressBar {
+        height: 12px !important;
+      }
+    }
   </style>
 </head>
 <body class="bg-slate-100 min-h-screen text-slate-800 pb-16 font-sans">
