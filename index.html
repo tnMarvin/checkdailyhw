@@ -1,14 +1,13 @@
 <!--
-  代碼產生日期與時間：2026-11-21 22:39
-  功能註記：班級 To-Do List 紅綠燈打卡系統完整前端 (GitHub Pages 專用)
-  整合功能：HMAC加密Token自動登入、紅綠燈三階段打卡、導師依學生日期分組覆核(含誤觸防呆)、任務分派、強制讀取簡報日期區間(預設本週一～六)
+  代碼產生日期與時間：2026-11-22 22:45
+  功能註記：班級 To-Do List 紅綠燈打卡系統 (簡報項目無期限保持簡潔，僅導師加派顯示繳交期限與逾期提示)
 -->
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>105班 作業與考試紅綠燈打卡系統</title>
+  <title>105班 作業與考試打卡系統</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     .tl-card {
@@ -32,54 +31,22 @@
       z-index: 9999; transition: opacity 0.25s ease;
     }
 
-    /* 📱 ================= 手機端自動偵測最佳化 (螢幕寬度 <= 640px) ================= */
+    /* 📱 手機端自動偵測最佳化 */
     @media (max-width: 640px) {
-      /* 1. 調整手機端根字體與容器邊距 */
-      body {
-        font-size: 16px; /* 防止 iOS Safari 點擊輸入框時畫面縮放跳動 */
-      }
-      main {
-        padding-left: 0.75rem !important;
-        padding-right: 0.75rem !important;
-      }
-
-      /* 2. 紅綠燈卡片放大：增加高度、內距與邊框視覺效果 */
-      .tl-card {
-        min-height: 116px !important;
-        padding: 0.85rem 0.5rem !important;
-        border-width: 2px !important;
-      }
-      .tl-card .text-base {
-        font-size: 1.15rem !important; /* 科目字級放大 */
-      }
-      .tl-card .text-sm {
-        font-size: 0.95rem !important; /* 內容字級放大 */
-        line-height: 1.35 !important;
-      }
-      .tl-card .text-\[10px\] {
-        font-size: 0.8rem !important; /* 狀態標籤放大 */
-      }
-
-      /* 3. 日期選單、輸入框與主要按鈕觸控區域放大 */
+      body { font-size: 16px; }
+      main { padding-left: 0.75rem !important; padding-right: 0.75rem !important; }
+      .tl-card { min-height: 116px !important; padding: 0.85rem 0.5rem !important; border-width: 2px !important; }
+      .tl-card .text-base { font-size: 1.15rem !important; }
+      .tl-card .text-sm { font-size: 0.95rem !important; line-height: 1.35 !important; }
+      .tl-card .text-\[10px\] { font-size: 0.8rem !important; }
       select, input[type="text"], input[type="password"], input[type="date"], textarea {
-        font-size: 1rem !important;
-        padding-top: 0.85rem !important;
-        padding-bottom: 0.85rem !important;
+        font-size: 1rem !important; padding-top: 0.85rem !important; padding-bottom: 0.85rem !important;
       }
-      button {
-        min-height: 44px; /* 符合 Apple/Google 規範的最小舒適觸控高度 */
+      button { min-height: 44px; }
+      #studentChipsContainer button, #taskChipsContainer button {
+        font-size: 0.85rem !important; padding: 0.6rem 0.8rem !important;
       }
-
-      /* 4. 導師後台學生晶片標籤（Chips）排版加大 */
-      #studentChipsContainer button {
-        font-size: 0.85rem !important;
-        padding: 0.6rem 0.8rem !important;
-      }
-
-      /* 5. 進度條增粗，視覺更明顯 */
-      #stuProgressBar, #progressBar {
-        height: 12px !important;
-      }
+      #stuProgressBar, #progressBar { height: 12px !important; }
     }
   </style>
 </head>
@@ -92,7 +59,7 @@
     <div class="bg-white rounded-3xl shadow-md border border-slate-200 p-7">
       <div class="text-center mb-6">
         <div class="text-4xl mb-2">🚦</div>
-        <h1 class="text-2xl font-extrabold text-slate-900">班級紅綠燈打卡系統</h1>
+        <h1 class="text-2xl font-extrabold text-slate-900">作業與考試打卡系統</h1>
         <p class="text-xs text-slate-500 mt-1 font-medium">學生／家長請輸入座號與密碼；導師請輸入管理帳密</p>
       </div>
 
@@ -188,7 +155,7 @@
       </div>
     </header>
 
-    <!-- 🔄 導師強制讀取簡報區間 (預設本週一～週六) -->
+    <!-- 🔄 強制讀取簡報區間 -->
     <details class="bg-white rounded-2xl shadow-sm border border-slate-200 mb-4 overflow-hidden">
       <summary class="px-4 py-3 text-xs font-extrabold text-slate-700 cursor-pointer flex items-center justify-between bg-slate-50 hover:bg-slate-100 select-none">
         <span>🔄 強制讀取簡報區間（預設本週一～週六）</span>
@@ -220,51 +187,97 @@
       </div>
     </details>
 
-    <!-- 分頁切換列 -->
-    <div class="bg-slate-900 p-1.5 rounded-2xl grid grid-cols-2 gap-1.5 mb-5">
-      <button id="tabBtnVerify" onclick="switchTeacherTab('verify')" class="py-2.5 rounded-xl text-sm font-extrabold bg-amber-400 text-slate-900 transition">✅ 待覆核學生清單</button>
+    <!-- 主要分頁切換列 -->
+    <div class="bg-slate-900 p-1.5 rounded-2xl grid grid-cols-2 gap-1.5 mb-4">
+      <button id="tabBtnVerify" onclick="switchTeacherTab('verify')" class="py-2.5 rounded-xl text-sm font-extrabold bg-amber-400 text-slate-900 transition">✅ 待覆核作業/學生</button>
       <button id="tabBtnAssign" onclick="switchTeacherTab('assign')" class="py-2.5 rounded-xl text-sm font-extrabold text-white hover:bg-slate-800 transition">📢 分派新任務</button>
     </div>
 
-    <!-- 分頁 A：待覆核學生清單 -->
+    <!-- ================= 分頁 A：待覆核管理（雙視角） ================= -->
     <section id="teacherTabVerify" class="space-y-4">
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-sm font-extrabold text-slate-700">尚有未覆核項目的學生 (<span id="pendingStudentCount">0</span> 人)</h2>
-          <span class="text-[11px] font-bold text-slate-400">🟡已完成 🔴未完成</span>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 flex items-center justify-between">
+        <span class="text-xs font-bold text-slate-500">檢視視角：</span>
+        <div class="inline-flex bg-slate-100 p-1 rounded-xl">
+          <button id="viewModeStuBtn" onclick="setTeacherViewMode('byStudent')" class="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-white shadow-sm text-slate-900 transition">👤 依學生檢視</button>
+          <button id="viewModeTaskBtn" onclick="setTeacherViewMode('byTask')" class="px-3 py-1.5 rounded-lg text-xs font-extrabold text-slate-500 hover:text-slate-900 transition">📋 依作業/考試檢視</button>
         </div>
-        <div id="studentChipsContainer" class="flex flex-wrap gap-2"></div>
       </div>
 
-      <div id="selectedStudentPanel" class="hidden space-y-4">
-        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 id="selectedStuHeader" class="text-lg font-extrabold text-slate-900"></h3>
-            <p class="text-[11px] font-bold text-slate-400">點擊紅／黃燈直接轉綠燈；誤觸再點可退回紅燈（切換學生後移出）</p>
+      <!-- 視角一：依學生 -->
+      <div id="subViewByStudent" class="space-y-4">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-extrabold text-slate-700">尚有未覆核項目的學生 (<span id="pendingStudentCount">0</span> 人)</h2>
+            <span class="text-[11px] font-bold text-slate-400">🟡已完成 🔴未完成</span>
           </div>
-          <div class="flex flex-wrap gap-2">
-            <button onclick="batchVerifyStudent('yellowOnly')" class="text-xs font-extrabold bg-yellow-300 hover:bg-yellow-400 text-slate-900 border border-slate-700 px-3 py-2 rounded-xl">✨ 一鍵覆核黃燈</button>
-            <button onclick="batchVerifyStudent('all')" class="text-xs font-extrabold bg-emerald-400 hover:bg-emerald-500 text-slate-900 border border-slate-700 px-3 py-2 rounded-xl">✅ 該生全部轉綠燈</button>
-          </div>
+          <div id="studentChipsContainer" class="flex flex-wrap gap-2"></div>
         </div>
 
-        <div id="studentDateGroups" class="space-y-4"></div>
+        <div id="selectedStudentPanel" class="hidden space-y-4">
+          <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 id="selectedStuHeader" class="text-lg font-extrabold text-slate-900"></h3>
+              <p class="text-[11px] font-bold text-slate-400">點擊紅／黃燈直接轉綠燈；誤觸再點可退回紅燈（切換後移出）</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button onclick="batchVerifyStudent('yellowOnly')" class="text-xs font-extrabold bg-yellow-300 hover:bg-yellow-400 text-slate-900 border border-slate-700 px-3 py-2 rounded-xl">✨ 一鍵覆核黃燈</button>
+              <button onclick="batchVerifyStudent('all')" class="text-xs font-extrabold bg-emerald-400 hover:bg-emerald-500 text-slate-900 border border-slate-700 px-3 py-2 rounded-xl">✅ 該生全部轉綠燈</button>
+            </div>
+          </div>
+          <div id="studentDateGroups" class="space-y-4"></div>
+        </div>
+      </div>
+
+      <!-- 視角二：依作業/考試 -->
+      <div id="subViewByTask" class="hidden space-y-4">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-extrabold text-slate-700">尚有同學未完成的項目 (<span id="pendingTaskCount">0</span> 項)</h2>
+            <span class="text-[11px] font-bold text-slate-400">僅列出未全數結案之項目</span>
+          </div>
+          <div id="taskChipsContainer" class="flex flex-wrap gap-2"></div>
+        </div>
+
+        <div id="selectedTaskPanel" class="hidden space-y-4">
+          <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <span id="selectedTaskDateBadge" class="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded"></span>
+              <h3 id="selectedTaskHeader" class="text-lg font-extrabold text-slate-900 mt-1"></h3>
+              <p class="text-[11px] font-bold text-slate-400 mt-0.5">點擊學生方塊轉綠燈結案；誤觸再點可退回紅燈</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button onclick="batchVerifyCurrentTask('yellowOnly')" class="text-xs font-extrabold bg-yellow-300 hover:bg-yellow-400 text-slate-900 border border-slate-700 px-3 py-2 rounded-xl">✨ 一鍵過審黃燈</button>
+              <button onclick="batchVerifyCurrentTask('all')" class="text-xs font-extrabold bg-emerald-400 hover:bg-emerald-500 text-slate-900 border border-slate-700 px-3 py-2 rounded-xl">✅ 此項目全員轉綠燈</button>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+            <h4 class="text-xs font-extrabold text-slate-500 mb-3">尚未覆核的同學名單：</h4>
+            <div id="taskStudentGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-3"></div>
+          </div>
+        </div>
       </div>
 
       <div id="allClearBanner" class="hidden bg-emerald-50 border border-emerald-200 rounded-2xl p-10 text-center">
         <div class="text-4xl mb-2">🎉</div>
         <h3 class="text-lg font-extrabold text-emerald-800">全班目前皆已覆核完成！</h3>
-        <p class="text-xs text-emerald-600 mt-1">太棒了，沒有任何待處理的紅燈或黃燈項目。</p>
+        <p class="text-xs text-emerald-600 mt-1">太棒了，所有作業與考試均已結案。</p>
       </div>
     </section>
 
-    <!-- 分頁 B：分派新任務 -->
+    <!-- ================= 分頁 B：分派新任務 (僅此處指派需設繳交期限) ================= -->
     <section id="teacherTabAssign" class="hidden bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
       <h2 class="text-base font-extrabold text-slate-800 border-b border-slate-100 pb-2">📢 新增班級／個人 To-Do 任務</h2>
 
-      <div>
-        <label class="block text-xs font-bold text-slate-500 mb-1.5">1. 指定任務日期</label>
-        <input type="date" id="assignDate" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 outline-none">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-bold text-slate-500 mb-1.5">1. 指定任務發布日期</label>
+          <input type="date" id="assignDate" onchange="autoSyncDeadline()" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 outline-none">
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-500 mb-1.5">⏰ 繳交期限 (Deadline)</label>
+          <input type="date" id="assignDeadline" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 outline-none focus:border-blue-500">
+        </div>
       </div>
 
       <div>
@@ -304,24 +317,48 @@
 
   <script>
     // ⚙️ === 可供調整之系統參數 ===
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxTDEzg5YMmufWVry6KtKwnoi26mcAhuspavXgu5uhfinm6fISEwgQdpqwD2PKfWjlLEQ/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxTDEzg5YMmufWVry6KtKwnoi26mcAhuspavXgu5uhfinm6fISEwgQdpqwd2PKfWjlLEQ/exec";
     const TOKEN_STORAGE_KEY = "CLASS105_TODO_TOKEN_V2";
 
     let authToken = "";
     let studentState = { info: null, dates: [], currentDate: "", tasks: [] };
-    let teacherState = { pendingStudents: [], allStudents: [], selectedSeat: null, assignType: "導師加派", selectedAssignSeats: new Set() };
+    let teacherState = {
+      pendingStudents: [],
+      allStudents: [],
+      selectedSeat: null,
+      assignType: "導師加派",
+      selectedAssignSeats: new Set(),
+      viewMode: "byStudent",
+      aggregatedTasks: [],
+      selectedTaskKey: null
+    };
 
-    // --- 統一 POST API 呼叫器 (絕不使用 GET 傳送敏感資訊) ---
     async function callApi(payload) {
-      const res = await fetch(GAS_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
+      let res;
+      try {
+        res = await fetch(GAS_API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(payload)
+        });
+      } catch (netErr) {
+        throw new Error("無法連線至 GAS。請檢查：1. 是否已在 GAS 完成授權 2. 部署權限是否設為「任何人」");
+      }
+
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (jsonErr) {
+        if (text.includes("accounts.google.com") || text.includes("ServiceLogin")) {
+          throw new Error("GAS 權限未開放：請至管理部署確認「誰可以存取」為「任何人」！");
+        }
+        throw new Error("GAS 回傳格式錯誤：" + text.slice(0, 80));
+      }
+
       if (data && data.authExpired) {
         logout();
-        showLoginError("登入憑證已過期，請重新輸入密碼登入。");
+        showLoginError("登入憑證已過期，請重新登入。");
       }
       return data;
     }
@@ -352,6 +389,11 @@
       return `${y}-${m}-${d}`;
     }
 
+    function getTodayStr8() {
+      const d = new Date();
+      return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+    }
+
     function formatCardLines(title) {
       const idx = title.search(/[:：]/);
       if (idx > 0 && idx < 6) {
@@ -375,14 +417,9 @@
       el.classList.remove("hidden");
     }
 
-    // --- 🔐 登入與加密憑證 (Token) 處理 ---
+    // --- 🔐 登入邏輯 ---
     async function handleLoginSubmit(e) {
       e.preventDefault();
-      if (GAS_API_URL.startsWith("請貼上")) {
-        showLoginError("請先在 index.html 中設定正確的 GAS_API_URL！");
-        return;
-      }
-
       const account = document.getElementById("loginAccount").value.trim();
       const pwd = document.getElementById("loginPwd").value.trim();
       const remember = document.getElementById("rememberMe").checked;
@@ -410,7 +447,7 @@
 
         enterAppByResponse(data);
       } catch (err) {
-        showLoginError("連線失敗，請確認網路或 GAS 部署權限。");
+        showLoginError(err.message || "連線失敗，請檢查網路或部署設定。");
       } finally {
         btn.disabled = false;
         btn.textContent = "登入系統";
@@ -441,7 +478,7 @@
       switchView("viewLogin");
     }
 
-    // --- 🎒 學生／家長打卡邏輯 ---
+    // --- 🎒 學生打卡邏輯 (🌟 僅有期限的導師加派才顯示期限與逾期) ---
     function renderStudentView() {
       const s = studentState.info;
       document.getElementById("stuTitle").textContent = `🎒 ${s.seat}號 ${s.name}`;
@@ -504,11 +541,22 @@
         el.innerHTML = `<p class="col-span-2 text-xs text-slate-400 text-center py-3">本日無項目</p>`;
         return;
       }
+      const todayStr = getTodayStr8();
+
       el.innerHTML = list.map(t => {
         const idx = studentState.tasks.indexOf(t);
         const label = t.status === 2 ? "✅ 已覆核" : (t.status === 1 ? "已完成" : "未完成");
+        
+        // 🌟 僅當存在 deadline 且長度為 8 碼時才渲染期限標籤
+        let dlBadge = '';
+        if (t.deadline && t.deadline.length === 8) {
+          const isOverdue = (t.status < 2 && t.deadline < todayStr);
+          dlBadge = `<span class="absolute top-1 right-2 text-[10px] font-bold ${isOverdue ? 'text-rose-600 animate-pulse' : 'text-slate-500'}">⏰ ${t.deadline.slice(4,6)}/${t.deadline.slice(6,8)}${isOverdue ? ' 逾期' : ''}</span>`;
+        }
+
         return `
-          <button onclick="onStudentCardClick(${idx})" class="tl-card status-${t.status} p-3.5 text-center flex flex-col items-center justify-center min-h-[96px] relative">
+          <button onclick="onStudentCardClick(${idx})" class="tl-card status-${t.status} p-3.5 text-center flex flex-col items-center justify-center min-h-[100px] relative">
+            ${dlBadge}
             ${formatCardLines(t.title)}
             <span class="mt-2 text-[10px] font-extrabold opacity-75">${label}</span>
           </button>
@@ -554,7 +602,7 @@
       }
     }
 
-    // --- 👩‍🏫 導師管理後台邏輯 ---
+    // --- 👩‍🏫 導師管理後台 ---
     function switchTeacherTab(tab) {
       const isVerify = tab === "verify";
       document.getElementById("teacherTabVerify").classList.toggle("hidden", !isVerify);
@@ -567,6 +615,24 @@
         : "py-2.5 rounded-xl text-sm font-extrabold text-white hover:bg-slate-800 transition";
     }
 
+    function setTeacherViewMode(mode) {
+      teacherState.viewMode = mode;
+      const isStu = mode === "byStudent";
+      document.getElementById("subViewByStudent").classList.toggle("hidden", !isStu);
+      document.getElementById("subViewByTask").classList.toggle("hidden", isStu);
+
+      document.getElementById("viewModeStuBtn").className = isStu
+        ? "px-3 py-1.5 rounded-lg text-xs font-extrabold bg-white shadow-sm text-slate-900 transition"
+        : "px-3 py-1.5 rounded-lg text-xs font-extrabold text-slate-500 hover:text-slate-900 transition";
+
+      document.getElementById("viewModeTaskBtn").className = !isStu
+        ? "px-3 py-1.5 rounded-lg text-xs font-extrabold bg-white shadow-sm text-slate-900 transition"
+        : "px-3 py-1.5 rounded-lg text-xs font-extrabold text-slate-500 hover:text-slate-900 transition";
+
+      if (isStu) renderTeacherPendingView();
+      else renderTaskAggregatedView();
+    }
+
     async function refreshTeacherPending() {
       setBadge("teaSyncBadge", "🔄 載入名單中...", "blue");
       try {
@@ -575,15 +641,20 @@
           teacherState.pendingStudents = data.pendingStudents || [];
           teacherState.allStudents = data.allStudents || [];
           teacherState.selectedSeat = null;
-          renderTeacherPendingView();
+          teacherState.selectedTaskKey = null;
+
+          if (teacherState.viewMode === "byStudent") renderTeacherPendingView();
+          else renderTaskAggregatedView();
+
           setBadge("teaSyncBadge", "✅ 名單已更新", "green");
-          showToast("已重新整理最新待覆核名單");
+          showToast("已重新整理最新待覆核清單");
         }
       } catch (e) {
         setBadge("teaSyncBadge", "❌ 更新失敗", "red");
       }
     }
 
+    // 視角一：依學生
     function renderTeacherPendingView() {
       const list = teacherState.pendingStudents;
       document.getElementById("pendingStudentCount").textContent = list.length;
@@ -659,6 +730,7 @@
       panel.classList.remove("hidden");
       document.getElementById("selectedStuHeader").textContent = `${stu.seat}號 ${stu.name} 的未覆核項目`;
 
+      const todayStr = getTodayStr8();
       const container = document.getElementById("studentDateGroups");
       container.innerHTML = stu.dateGroups.map((group, gIdx) => `
         <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
@@ -669,10 +741,19 @@
           <div class="grid grid-cols-2 gap-3">
             ${group.items.map((item, iIdx) => {
               const stLabel = item.status === 2 ? "✅ 已覆核" : (item.status === 1 ? "已完成" : "未完成");
+              
+              // 🌟 僅當存在 deadline 且長度為 8 碼時才渲染期限
+              let dlBadge = '';
+              if (item.deadline && item.deadline.length === 8) {
+                const isOverdue = (item.status < 2 && item.deadline < todayStr);
+                dlBadge = `<span class="absolute top-1.5 right-2 text-[10px] font-bold ${isOverdue ? 'text-rose-600 animate-pulse' : 'opacity-60'}">⏰ ${item.deadline.slice(4,6)}/${item.deadline.slice(6,8)}${isOverdue ? ' 逾期' : ''}</span>`;
+              }
+
               return `
                 <button onclick="onTeacherCardClick(${gIdx}, ${iIdx})" class="tl-card status-${item.status} p-3.5 text-center flex flex-col items-center justify-center min-h-[100px] relative">
                   <span class="absolute top-1.5 left-2 text-[10px] font-extrabold opacity-60">${escapeHtml(item.type)}</span>
-                  <div class="mt-2">${formatCardLines(item.title)}</div>
+                  ${dlBadge}
+                  <div class="mt-3">${formatCardLines(item.title)}</div>
                   <span class="mt-2 text-[10px] font-extrabold opacity-75">${stLabel}</span>
                 </button>
               `;
@@ -738,6 +819,157 @@
       );
     }
 
+    // 視角二：依作業/考試
+    function aggregatePendingTasks() {
+      const taskMap = {};
+      teacherState.pendingStudents.forEach(stu => {
+        stu.dateGroups.forEach(group => {
+          group.items.forEach(item => {
+            if (item.status < 2) {
+              const key = `${group.date}|${item.type}|${item.title}`;
+              if (!taskMap[key]) {
+                taskMap[key] = {
+                  key: key,
+                  date: group.date,
+                  type: item.type,
+                  title: item.title,
+                  deadline: item.deadline || '',
+                  students: []
+                };
+              }
+              taskMap[key].students.push({
+                seat: stu.seat,
+                name: stu.name,
+                status: item.status,
+                rawItemRef: item
+              });
+            }
+          });
+        });
+      });
+      return Object.values(taskMap).sort((a, b) => b.date.localeCompare(a.date));
+    }
+
+    function renderTaskAggregatedView() {
+      const tasks = aggregatePendingTasks();
+      teacherState.aggregatedTasks = tasks;
+      document.getElementById("pendingTaskCount").textContent = tasks.length;
+
+      const clearBanner = document.getElementById("allClearBanner");
+      const taskPanel = document.getElementById("selectedTaskPanel");
+      const chipsEl = document.getElementById("taskChipsContainer");
+
+      if (tasks.length === 0) {
+        chipsEl.innerHTML = `<p class="text-xs text-slate-400">目前無待覆核作業或考試</p>`;
+        clearBanner.classList.remove("hidden");
+        taskPanel.classList.add("hidden");
+        return;
+      }
+
+      clearBanner.classList.add("hidden");
+      if (!teacherState.selectedTaskKey || !tasks.some(t => t.key === teacherState.selectedTaskKey)) {
+        teacherState.selectedTaskKey = tasks[0].key;
+      }
+
+      chipsEl.innerHTML = tasks.map(t => {
+        const active = t.key === teacherState.selectedTaskKey;
+        const yellowCount = t.students.filter(s => s.status === 1).length;
+        const redCount = t.students.filter(s => s.status === 0).length;
+        const cls = active
+          ? "bg-slate-900 text-white border-slate-900 shadow"
+          : "bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100";
+        return `
+          <button onclick="selectTeacherTask('${t.key}')" class="px-3 py-2 rounded-xl border text-xs font-extrabold transition ${cls}">
+            <span class="opacity-75">[${t.date.slice(4,6)}/${t.date.slice(6,8)} ${t.type}]</span> ${escapeHtml(t.title)}
+            <span class="ml-1 opacity-90">${yellowCount > 0 ? `🟡${yellowCount}` : ""} ${redCount > 0 ? `🔴${redCount}` : ""}</span>
+          </button>
+        `;
+      }).join("");
+
+      renderSelectedTaskDetail();
+    }
+
+    function selectTeacherTask(key) {
+      teacherState.selectedTaskKey = key;
+      renderTaskAggregatedView();
+    }
+
+    function renderSelectedTaskDetail() {
+      const task = teacherState.aggregatedTasks.find(t => t.key === teacherState.selectedTaskKey);
+      const panel = document.getElementById("selectedTaskPanel");
+      if (!task) { panel.classList.add("hidden"); return; }
+
+      panel.classList.remove("hidden");
+      let dlInfo = '';
+      if (task.deadline && task.deadline.length === 8) {
+        const isOverdue = task.deadline < getTodayStr8();
+        dlInfo = ` (⏰ 期限: ${task.deadline.slice(4,6)}/${task.deadline.slice(6,8)}${isOverdue ? ' 已逾期' : ''})`;
+      }
+      document.getElementById("selectedTaskDateBadge").textContent = `${formatDateTW(task.date)} · ${task.type}${dlInfo}`;
+      document.getElementById("selectedTaskHeader").textContent = task.title;
+
+      const grid = document.getElementById("taskStudentGrid");
+      grid.innerHTML = task.students.map((stu, idx) => {
+        const stLabel = stu.status === 2 ? "✅ 已覆核" : (stu.status === 1 ? "已完成" : "未完成");
+        return `
+          <button onclick="onTaskStudentCardClick(${idx})" class="tl-card status-${stu.status} p-3 text-center flex flex-col items-center justify-center min-h-[85px] relative">
+            <span class="text-base font-extrabold">${stu.seat}號 ${escapeHtml(stu.name)}</span>
+            <span class="mt-1 text-[10px] font-extrabold opacity-75">${stLabel}</span>
+          </button>
+        `;
+      }).join("");
+    }
+
+    async function onTaskStudentCardClick(stuIdx) {
+      const task = teacherState.aggregatedTasks.find(t => t.key === teacherState.selectedTaskKey);
+      if (!task) return;
+      const stu = task.students[stuIdx];
+      const prev = stu.status;
+      stu.status = prev === 2 ? 0 : 2;
+      stu.rawItemRef.status = stu.status;
+
+      renderSelectedTaskDetail();
+
+      await sendTeacherBatch([{ date: task.date, seat: stu.seat, type: task.type, title: task.title, status: stu.status }], () => {
+        stu.status = prev;
+        stu.rawItemRef.status = prev;
+        renderSelectedTaskDetail();
+      });
+    }
+
+    async function batchVerifyCurrentTask(mode) {
+      const task = teacherState.aggregatedTasks.find(t => t.key === teacherState.selectedTaskKey);
+      if (!task) return;
+      const targets = [];
+      task.students.forEach(stu => {
+        if (mode === "yellowOnly" && stu.status === 1) targets.push(stu);
+        else if (mode === "all" && stu.status < 2) targets.push(stu);
+      });
+
+      if (targets.length === 0) {
+        showToast(mode === "yellowOnly" ? "目前沒有黃燈(已完成)同學" : "所有同學皆已過審");
+        return;
+      }
+
+      const backup = targets.map(s => ({ s, prev: s.status }));
+      targets.forEach(s => {
+        s.status = 2;
+        s.rawItemRef.status = 2;
+      });
+      renderSelectedTaskDetail();
+
+      await sendTeacherBatch(
+        targets.map(s => ({ date: task.date, seat: s.seat, type: task.type, title: task.title, status: 2 })),
+        () => {
+          backup.forEach(b => {
+            b.s.status = b.prev;
+            b.s.rawItemRef.status = b.prev;
+          });
+          renderSelectedTaskDetail();
+        }
+      );
+    }
+
     async function sendTeacherBatch(items, onErrorRollback) {
       setBadge("teaSyncBadge", "☁️ 寫入覆核中...", "blue");
       try {
@@ -751,10 +983,20 @@
       }
     }
 
-    // --- 📢 導師分派任務 & 強制同步區間初始化 ---
+    // --- 📢 導師分派新任務 ---
+    function autoSyncDeadline() {
+      const assignDateVal = document.getElementById("assignDate").value;
+      if (!assignDateVal) return;
+      const d = new Date(assignDateVal);
+      d.setDate(d.getDate() + 1);
+      document.getElementById("assignDeadline").value = toInputDateStr(d);
+    }
+
     function initTeacherAssignUI() {
-      setSyncPreset("thisWeek"); // 預設強制讀取簡報區間為本週一～週六
-      document.getElementById("assignDate").value = toInputDateStr(new Date());
+      setSyncPreset("thisWeek");
+      const today = new Date();
+      document.getElementById("assignDate").value = toInputDateStr(today);
+      autoSyncDeadline();
 
       const picker = document.getElementById("assignSeatPicker");
       picker.innerHTML = teacherState.allStudents.map(s => `
@@ -793,6 +1035,7 @@
 
     async function submitAssignTasks() {
       const dateVal = document.getElementById("assignDate").value;
+      const deadlineVal = document.getElementById("assignDeadline").value || "";
       const mode = document.querySelector('input[name="assignTargetMode"]:checked').value;
       const rawText = document.getElementById("assignRawText").value.trim();
       const targets = mode === "ALL" ? ["ALL"] : Array.from(teacherState.selectedAssignSeats);
@@ -811,6 +1054,7 @@
           action: "assignTasks",
           token: authToken,
           date: dateVal,
+          deadline: deadlineVal,
           targets: targets,
           type: teacherState.assignType,
           rawText: rawText
@@ -831,7 +1075,7 @@
     // --- 🔄 導師強制讀取簡報區間 ---
     function setSyncPreset(mode) {
       const now = new Date();
-      const day = now.getDay(); // 0=日, 1=一 ... 6=六
+      const day = now.getDay();
       const diffToMon = (day === 0) ? -6 : (1 - day);
 
       const start = new Date(now);
@@ -839,7 +1083,7 @@
 
       if (mode === "thisWeek") {
         start.setDate(now.getDate() + diffToMon);
-        end.setDate(start.getDate() + 5); // 週一 + 5天 = 週六
+        end.setDate(start.getDate() + 5);
       } else if (mode === "lastWeek") {
         start.setDate(now.getDate() + diffToMon - 7);
         end.setDate(start.getDate() + 5);
@@ -913,7 +1157,7 @@
       el.className = `inline-block mt-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${map[color] || map.green}`;
     }
 
-    // --- 🚀 啟動自動以安全 Token 登入 (不讀取任何密碼) ---
+    // --- 🚀 啟動自動登入 ---
     window.onload = async function () {
       const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
       if (!savedToken || GAS_API_URL.startsWith("請貼上")) return;
